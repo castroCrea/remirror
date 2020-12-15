@@ -2,9 +2,10 @@ import refractor from 'refractor/core';
 
 import {
   ApplySchemaAttributes,
+  assertGet,
   CommandFunction,
-  CreatePluginReturn,
-  extensionDecorator,
+  CreateExtensionPlugin,
+  extension,
   ExtensionTag,
   findNodeAtSelection,
   findParentNodeOfType,
@@ -20,6 +21,7 @@ import {
   NodeExtension,
   NodeExtensionSpec,
   nodeInputRule,
+  NodeSpecOverride,
   OnSetOptionsParameter,
   PosParameter,
   removeNodeAtPosition,
@@ -34,13 +36,13 @@ import { CodeBlockState } from './code-block-plugin';
 import type { CodeBlockAttributes, CodeBlockOptions } from './code-block-types';
 import {
   codeBlockToDOM,
-  dataAttribute,
   formatCodeBlockFactory,
   getLanguage,
+  getLanguageFromDom,
   updateNodeAttributes,
 } from './code-block-utils';
 
-@extensionDecorator<CodeBlockOptions>({
+@extension<CodeBlockOptions>({
   defaultOptions: {
     supportedLanguages: [],
     keyboardShortcut: mod('ShiftAlt', 'f'),
@@ -50,14 +52,18 @@ import {
     defaultLanguage: 'markup',
     // See https://github.com/remirror/remirror/issues/624 for the ''
     plainTextClassName: '',
+    getLanguageFromDom,
   },
+  staticKeys: ['getLanguageFromDom'],
 })
 export class CodeBlockExtension extends NodeExtension<CodeBlockOptions> {
   get name() {
     return 'codeBlock' as const;
   }
 
-  readonly tags = [ExtensionTag.BlockNode, ExtensionTag.Code];
+  createTags() {
+    return [ExtensionTag.Block, ExtensionTag.Code];
+  }
 
   /**
    * Add the languages to the environment if they have not yet been added.
@@ -66,19 +72,41 @@ export class CodeBlockExtension extends NodeExtension<CodeBlockOptions> {
     this.registerLanguages();
   }
 
-  createNodeSpec(extra: ApplySchemaAttributes): NodeExtensionSpec {
+  createNodeSpec(extra: ApplySchemaAttributes, override: NodeSpecOverride): NodeExtensionSpec {
+    const githubHighlightRegExp = /highlight-(?:text|source)-([\da-z]+)/;
+
     return {
+      content: 'text*',
+      marks: '',
+      defining: true,
+      isolating: true,
+      draggable: false,
+      ...override,
+      code: true,
       attrs: {
         ...extra.defaults(),
         language: { default: this.options.defaultLanguage },
       },
-      content: 'text*',
-      marks: '',
-      code: true,
-      defining: true,
-      isolating: true,
-      draggable: false,
       parseDOM: [
+        // Add support for github code blocks.
+        {
+          tag: 'div.highlight',
+          preserveWhitespace: 'full',
+          getAttrs: (node) => {
+            if (!isElementDomNode(node)) {
+              return false;
+            }
+
+            const codeElement = node.querySelector('pre.code');
+
+            if (!isElementDomNode(codeElement)) {
+              return false;
+            }
+
+            const language = node.className.match(githubHighlightRegExp)?.[1];
+            return { ...extra.parse(node), language };
+          },
+        },
         {
           tag: 'pre',
           preserveWhitespace: 'full',
@@ -93,7 +121,7 @@ export class CodeBlockExtension extends NodeExtension<CodeBlockOptions> {
               return false;
             }
 
-            const language = codeElement.getAttribute(dataAttribute);
+            const language = this.options.getLanguageFromDom(codeElement, node);
             return { ...extra.parse(node), language };
           },
         },
@@ -119,7 +147,7 @@ export class CodeBlockExtension extends NodeExtension<CodeBlockOptions> {
       toggleCodeBlock: (attributes: Partial<CodeBlockAttributes>): CommandFunction =>
         toggleBlockItem({
           type: this.type,
-          toggleType: this.store.schema.nodes[this.options.toggleName],
+          toggleType: this.options.toggleName,
           attrs: { language: this.options.defaultLanguage, ...attributes },
         }),
 
@@ -256,7 +284,7 @@ export class CodeBlockExtension extends NodeExtension<CodeBlockOptions> {
         }
 
         const { pos, node, start } = parent;
-        const toggleNode = state.schema.nodes[this.options.toggleName];
+        const toggleNode = assertGet(state.schema.nodes, this.options.toggleName);
 
         if (node.textContent.trim() === '') {
           if (tr.doc.lastChild === node && tr.doc.firstChild === node) {
@@ -351,7 +379,7 @@ export class CodeBlockExtension extends NodeExtension<CodeBlockOptions> {
   /**
    * Create the custom code block plugin which handles the delete key amongst other things.
    */
-  createPlugin(): CreatePluginReturn<CodeBlockState> {
+  createPlugin(): CreateExtensionPlugin<CodeBlockState> {
     const pluginState = new CodeBlockState(this.type, this);
 
     /**
@@ -369,8 +397,8 @@ export class CodeBlockExtension extends NodeExtension<CodeBlockOptions> {
         init(_, state) {
           return pluginState.init(state);
         },
-        apply(tr) {
-          return pluginState.apply(tr);
+        apply(tr, _, __, state) {
+          return pluginState.apply(tr, state);
         },
       },
       props: {

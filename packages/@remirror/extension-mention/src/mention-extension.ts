@@ -3,7 +3,7 @@ import {
   bool,
   CommandFunction,
   ErrorConstant,
-  extensionDecorator,
+  extension,
   ExtensionTag,
   FromToParameter,
   GetMarkRange,
@@ -17,13 +17,11 @@ import {
   isPlainObject,
   isString,
   LEAF_NODE_REPLACING_CHARACTER,
-  MarkAttributes,
   MarkExtension,
   MarkExtensionSpec,
-  markPasteRule,
+  MarkSpecOverride,
   pick,
   ProsemirrorAttributes,
-  ProsemirrorPlugin,
   RangeParameter,
   removeMark,
   replaceText,
@@ -31,6 +29,7 @@ import {
   Static,
 } from '@remirror/core';
 import type { CreateEventHandlers } from '@remirror/extension-events';
+import { MarkPasteRule } from '@remirror/pm/paste-rules';
 import {
   createRegexFromSuggester,
   DEFAULT_SUGGESTER,
@@ -142,7 +141,7 @@ export interface MentionOptions
  *   suggested.
  * - Decorations for in-progress mentions
  */
-@extensionDecorator<MentionOptions>({
+@extension<MentionOptions>({
   defaultOptions: {
     mentionTag: 'a' as const,
     matchers: [],
@@ -168,21 +167,24 @@ export class MentionExtension extends MarkExtension<MentionOptions> {
   /**
    * Tag this as a behavior influencing mark.
    */
-  readonly tags = [ExtensionTag.Behavior, ExtensionTag.ExcludeInputRules];
+  createTags() {
+    return [ExtensionTag.Behavior, ExtensionTag.ExcludeInputRules];
+  }
 
-  createMarkSpec(extra: ApplySchemaAttributes): MarkExtensionSpec {
+  createMarkSpec(extra: ApplySchemaAttributes, override: MarkSpecOverride): MarkExtensionSpec {
     const dataAttributeId = 'data-mention-id';
     const dataAttributeName = 'data-mention-name';
 
     return {
+      excludes: '_',
+      inclusive: false,
+      ...override,
       attrs: {
         ...extra.defaults(),
         id: {},
         label: {},
         name: {},
       },
-      excludes: '_',
-      inclusive: false,
       parseDOM: [
         {
           tag: `${this.options.mentionTag}[${dataAttributeId}]`,
@@ -398,7 +400,7 @@ export class MentionExtension extends MarkExtension<MentionOptions> {
    *
    * It creates regex tests for each of the configured matchers.
    */
-  createPasteRules(): ProsemirrorPlugin[] {
+  createPasteRules(): MarkPasteRule[] {
     return this.options.matchers.map((matcher) => {
       const { startOfLine, char, supportedCharacters, name, matchOffset } = {
         ...DEFAULT_MATCHER,
@@ -420,15 +422,16 @@ export class MentionExtension extends MarkExtension<MentionOptions> {
         'g',
       );
 
-      return markPasteRule({
+      return {
+        type: 'mark',
         regexp,
-        type: this.type,
+        markType: this.type,
         getAttributes: (string) => ({
           id: getMatchString(string.slice(string[2].length, string.length)),
           label: getMatchString(string),
           name,
         }),
-      });
+      };
     });
   }
 
@@ -594,7 +597,7 @@ interface KeepSelectionParameter {
  * The attrs that will be added to the node. ID and label are plucked and used
  * while attributes like href and role can be assigned as desired.
  */
-export type MentionExtensionAttributes = MarkAttributes<
+export type MentionExtensionAttributes = ProsemirrorAttributes<
   OptionalMentionExtensionParameter & {
     /**
      * A unique identifier for the suggesters node
@@ -608,7 +611,7 @@ export type MentionExtensionAttributes = MarkAttributes<
   }
 >;
 
-export type NamedMentionExtensionAttributes = MarkAttributes<
+export type NamedMentionExtensionAttributes = ProsemirrorAttributes<
   OptionalMentionExtensionParameter & {
     /**
      * A unique identifier for the suggesters node

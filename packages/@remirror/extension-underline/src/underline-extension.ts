@@ -1,24 +1,28 @@
 import {
   ApplySchemaAttributes,
   CommandFunction,
-  extensionDecorator,
+  extension,
   ExtensionTag,
   KeyBindings,
   MarkExtension,
   MarkExtensionSpec,
+  MarkSpecOverride,
   toggleMark,
 } from '@remirror/core';
 
-@extensionDecorator({})
+@extension({})
 export class UnderlineExtension extends MarkExtension {
   get name() {
     return 'underline' as const;
   }
 
-  readonly tags = [ExtensionTag.FontStyle];
+  createTags() {
+    return [ExtensionTag.FontStyle, ExtensionTag.SupportsExit, ExtensionTag.FormattingMark];
+  }
 
-  createMarkSpec(extra: ApplySchemaAttributes): MarkExtensionSpec {
+  createMarkSpec(extra: ApplySchemaAttributes, override: MarkSpecOverride): MarkExtensionSpec {
     return {
+      ...override,
       attrs: extra.defaults(),
       parseDOM: [
         {

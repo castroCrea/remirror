@@ -8,6 +8,7 @@ import {
   NodeType,
   ProsemirrorAttributes,
 } from '@remirror/core';
+import { ExtensionCalloutMessages } from '@remirror/messages';
 
 import type { CalloutAttributes } from './callout-types';
 
@@ -55,3 +56,22 @@ export function updateNodeAttributes(type: NodeType) {
     return true;
   };
 }
+
+const { DESCRIPTION, LABEL } = ExtensionCalloutMessages;
+
+export const toggleCalloutOptions: Remirror.CommandDecoratorOptions = {
+  icon: ({ attrs }) => {
+    switch (attrs.type as CalloutAttributes['type']) {
+      case 'error':
+        return 'closeCircleLine';
+      case 'success':
+        return 'checkboxCircleLine';
+      case 'warning':
+        return 'errorWarningLine';
+      default:
+        return 'informationLine';
+    }
+  },
+  description: ({ t, attrs }) => t(DESCRIPTION, { type: attrs.type }),
+  label: ({ t, attrs }) => t(LABEL, { type: attrs.type }),
+};

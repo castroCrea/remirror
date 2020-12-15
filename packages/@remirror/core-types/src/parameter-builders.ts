@@ -11,18 +11,12 @@ import type {
   Transaction,
 } from '@remirror/pm';
 
-import type {
-  MakeOptional,
-  MarkAttributes,
-  NodeAttributes,
-  Position,
-  ProsemirrorAttributes,
-} from './base-types';
+import type { MakeOptional, Position, ProsemirrorAttributes } from './base-types';
 
 /**
  * A parameter builder interface containing the `view` property.
  *
- * @typeParam Schema - the underlying editor schema.
+ * @template Schema - the underlying editor schema.
  */
 export interface EditorViewParameter<Schema extends EditorSchema = EditorSchema> {
   /**
@@ -34,8 +28,8 @@ export interface EditorViewParameter<Schema extends EditorSchema = EditorSchema>
 /**
  * A parameter builder interface containing the `schema` property.
  *
- * @typeParam GNodes - the names of the nodes within the editor schema.
- * @typeParam GMarks - the names of the marks within the editor schema.
+ * @template GNodes - the names of the nodes within the editor schema.
+ * @template GMarks - the names of the marks within the editor schema.
  */
 export interface SchemaParameter<Nodes extends string = string, Marks extends string = string> {
   /**
@@ -47,7 +41,7 @@ export interface SchemaParameter<Nodes extends string = string, Marks extends st
 /**
  * A parameter builder interface containing the `state` property.
  *
- * @typeParam Schema - the underlying editor schema.
+ * @template Schema - the underlying editor schema.
  */
 export interface EditorStateParameter<Schema extends EditorSchema = EditorSchema> {
   /**
@@ -67,7 +61,7 @@ export interface TrStateParameter<Schema extends EditorSchema = EditorSchema> {
 /**
  * A parameter builder interface for comparing two instances of the editor state.
  *
- * @typeParam Schema - the underlying editor schema.
+ * @template Schema - the underlying editor schema.
  */
 export interface CompareStateParameter<Schema extends EditorSchema = EditorSchema> {
   /**
@@ -110,7 +104,7 @@ export interface FromToParameter {
  * A parameter builder type which uses {@link FromToParameter} where `from` or `to`, or both
  * can be set as optional.
  *
- * @typeParam Key - the keys to set as optional (either `from` or `to`).
+ * @template Key - the keys to set as optional (either `from` or `to`).
  */
 export type OptionalFromToParameter<Key extends keyof FromToParameter> = MakeOptional<
   FromToParameter,
@@ -144,7 +138,7 @@ export interface NodeAttributesParameter {
   /**
    * An object describing the attrs for a prosemirror node
    */
-  attrs: NodeAttributes;
+  attrs: ProsemirrorAttributes;
 }
 
 /**
@@ -154,19 +148,31 @@ export interface MarkAttributesParameter {
   /**
    * An object describing the attrs for a mark.
    */
-  attrs: MarkAttributes;
+  attrs: ProsemirrorAttributes;
 }
 
 /**
  * A parameter builder interface containing the node `type` property.
  *
- * @typeParam Schema - the underlying editor schema.
+ * @template Schema - the underlying editor schema.
  */
 export interface NodeTypeParameter<Schema extends EditorSchema = EditorSchema> {
   /**
    * A prosemirror node type instance.
    */
   type: NodeType<Schema>;
+}
+
+/**
+ * A parameter builder interface containing the node `type` property.
+ *
+ * @template Schema - the underlying editor schema.
+ */
+export interface NodeTypeNameParameter<Schema extends EditorSchema = EditorSchema> {
+  /**
+   * A prosemirror node type instance.
+   */
+  type: NodeType<Schema> | string;
 }
 
 /**
@@ -177,7 +183,7 @@ export interface NodeTypeParameter<Schema extends EditorSchema = EditorSchema> {
  *
  * This can be used to check whether a certain type matches any of these types.
  *
- * @typeParam Schema - the underlying editor schema.
+ * @template Schema - the underlying editor schema.
  */
 export interface NodeTypesParameter<Schema extends EditorSchema = EditorSchema> {
   /**
@@ -194,7 +200,7 @@ export interface NodeTypesParameter<Schema extends EditorSchema = EditorSchema> 
  *
  * This can be used to check whether a certain type matches any of these types.
  *
- * @typeParam Schema - the underlying editor schema.
+ * @template Schema - the underlying editor schema.
  */
 export interface MarkTypesParameter<Schema extends EditorSchema = EditorSchema> {
   /**
@@ -206,7 +212,7 @@ export interface MarkTypesParameter<Schema extends EditorSchema = EditorSchema> 
 /**
  * A parameter builder interface containing the mark `type` property.
  *
- * @typeParam Schema - the underlying editor schema.
+ * @template Schema - the underlying editor schema.
  */
 export interface MarkTypeParameter<Schema extends EditorSchema = EditorSchema> {
   /**
@@ -223,7 +229,7 @@ export interface ProsemirrorNodeParameter<Schema extends EditorSchema = EditorSc
 }
 
 export type NodeWithAttributes<Attributes extends object = object> = ProsemirrorNode & {
-  attrs: NodeAttributes<Attributes>;
+  attrs: ProsemirrorAttributes<Attributes>;
 };
 
 export interface NodeWithAttributesParameter<Attributes extends object = object> {
@@ -234,7 +240,7 @@ export interface NodeWithAttributesParameter<Attributes extends object = object>
 }
 
 export type MarkWithAttributes<Attributes extends object = object> = Mark & {
-  attrs: MarkAttributes<Attributes>;
+  attrs: ProsemirrorAttributes<Attributes>;
 };
 
 export interface MarkWithAttributesParameter<Attributes extends object = object> {

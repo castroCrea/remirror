@@ -1,4 +1,4 @@
-import { invariant, isNumber, isString, object } from '@remirror/core-helpers';
+import { assertGet, invariant, isNumber, isString, object } from '@remirror/core-helpers';
 import type {
   AttributesParameter,
   CommandFunction,
@@ -6,9 +6,9 @@ import type {
   FromToParameter,
   MarkType,
   MarkTypeParameter,
-  NodeAttributes,
   NodeType,
-  NodeTypeParameter,
+  NodeTypeNameParameter,
+  PrimitiveSelection,
   ProsemirrorAttributes,
   RangeParameter,
   Selection,
@@ -17,10 +17,10 @@ import type {
 import { TextSelection } from '@remirror/pm/state';
 import { findWrapping, liftTarget } from '@remirror/pm/transform';
 
-import { getMarkRange, isMarkType, isNodeType } from './core-utils';
-import { isNodeActive, isSelectionEmpty } from './prosemirror-utils';
+import { getMarkRange, getTextSelection, isMarkType, isNodeType } from './core-utils';
+import { getActiveNode, isSelectionEmpty } from './prosemirror-utils';
 
-interface UpdateMarkParameter extends Partial<RangeParameter>, Partial<AttributesParameter> {
+export interface UpdateMarkParameter extends Partial<RangeParameter>, Partial<AttributesParameter> {
   /**
    * The text to append.
    *
@@ -95,13 +95,13 @@ export function lift({ tr, dispatch }: Pick<CommandFunctionParameter, 'tr' | 'di
  */
 export function wrapIn(
   type: string | NodeType,
-  attrs: NodeAttributes = {},
-  range?: FromToParameter,
+  attrs: ProsemirrorAttributes = {},
+  selection?: PrimitiveSelection,
 ): CommandFunction {
   return function (parameter) {
     const { tr, dispatch, state } = parameter;
-    const nodeType = isString(type) ? state.schema.nodes[type] : type;
-    const { from, to } = range ?? tr.selection;
+    const nodeType = isString(type) ? assertGet(state.schema.nodes, type) : type;
+    const { from, to } = getTextSelection(selection ?? tr.selection, tr.doc);
     const $from = tr.doc.resolve(from);
     const $to = tr.doc.resolve(to);
 
@@ -113,7 +113,6 @@ export function wrapIn(
     }
 
     dispatch?.(tr.wrap(blockRange, wrapping).scrollIntoView());
-
     return true;
   };
 }
@@ -127,18 +126,19 @@ export function wrapIn(
  */
 export function toggleWrap(
   nodeType: string | NodeType,
-  attrs: NodeAttributes = {},
+  attrs: ProsemirrorAttributes = {},
+  selection?: PrimitiveSelection,
 ): CommandFunction {
   return (parameter) => {
     const { tr, state } = parameter;
-    const type = isString(nodeType) ? state.schema.nodes[nodeType] : nodeType;
-    const isActive = isNodeActive({ state: tr, type });
+    const type = isString(nodeType) ? assertGet(state.schema.nodes, nodeType) : nodeType;
+    const activeNode = getActiveNode({ state: tr, type, attrs });
 
-    if (isActive) {
+    if (activeNode) {
       return lift(parameter);
     }
 
-    return wrapIn(nodeType, attrs)(parameter);
+    return wrapIn(nodeType, attrs, selection)(parameter);
   };
 }
 
@@ -151,16 +151,20 @@ export function toggleWrap(
 export function setBlockType(
   nodeType: string | NodeType,
   attrs?: ProsemirrorAttributes,
-  range?: FromToParameter,
+  selection?: PrimitiveSelection,
+  preserveAttrs = true,
 ): CommandFunction {
   return function (parameter) {
     const { tr, dispatch, state } = parameter;
-    const type = isString(nodeType) ? state.schema.nodes[nodeType] : nodeType;
-    const { from, to } = range ?? tr.selection;
+    const type = isString(nodeType) ? assertGet(state.schema.nodes, nodeType) : nodeType;
+    const { from, to } = getTextSelection(selection ?? tr.selection, tr.doc);
+
     let applicable = false;
+    let activeAttrs: ProsemirrorAttributes | undefined;
 
     tr.doc.nodesBetween(from, to, (node, pos) => {
       if (applicable) {
+        // Exit early and don't descend.
         return false;
       }
 
@@ -170,6 +174,8 @@ export function setBlockType(
 
       if (node.type === type) {
         applicable = true;
+        activeAttrs = node.attrs;
+
         return;
       }
 
@@ -177,6 +183,11 @@ export function setBlockType(
       const index = $pos.index();
 
       applicable = $pos.parent.canReplaceWith(index, index + 1, type);
+
+      if (applicable) {
+        activeAttrs = $pos.parent.attrs;
+      }
+
       return;
     });
 
@@ -184,19 +195,32 @@ export function setBlockType(
       return false;
     }
 
-    if (dispatch) {
-      dispatch(tr.setBlockType(from, to, type, attrs).scrollIntoView());
-    }
+    dispatch?.(
+      tr
+        .setBlockType(from, to, type, { ...(preserveAttrs ? activeAttrs : {}), ...attrs })
+        .scrollIntoView(),
+    );
 
     return true;
   };
 }
 
-interface ToggleBlockItemParameter extends NodeTypeParameter, Partial<AttributesParameter> {
+export interface ToggleBlockItemParameter
+  extends NodeTypeNameParameter,
+    Partial<AttributesParameter> {
   /**
-   * The type to toggle back to. Usually this is the paragraph node type.
+   * The type to toggle back to. Usually this is the `paragraph` node type.
+   *
+   * @default 'paragraph'
    */
-  toggleType: NodeType;
+  toggleType: NodeType | string;
+
+  /**
+   * Whether to preserve the attrs when toggling a block item.
+   *
+   * @default true
+   */
+  preserveAttrs?: boolean;
 }
 
 /**
@@ -207,18 +231,27 @@ interface ToggleBlockItemParameter extends NodeTypeParameter, Partial<Attributes
 export function toggleBlockItem(toggleParameter: ToggleBlockItemParameter): CommandFunction {
   return (parameter) => {
     const { tr } = parameter;
-    const { type, toggleType, attrs } = toggleParameter;
-    const isActive = isNodeActive({ state: tr, type, attrs });
+    const { type, toggleType, attrs, preserveAttrs = true } = toggleParameter;
+    const activeNode = getActiveNode({ state: tr, type, attrs });
 
-    if (isActive) {
-      return setBlockType(toggleType)(parameter);
+    if (activeNode) {
+      return setBlockType(toggleType, {
+        ...(preserveAttrs ? activeNode.node.attrs : {}),
+        ...attrs,
+      })(parameter);
     }
 
-    return setBlockType(type, attrs)(parameter);
+    const toggleNode = getActiveNode({ state: tr, type: toggleType, attrs });
+
+    return setBlockType(type, { ...(preserveAttrs ? toggleNode?.node.attrs : {}), ...attrs })(
+      parameter,
+    );
   };
 }
 
-interface ReplaceTextParameter extends Partial<RangeParameter>, Partial<AttributesParameter> {
+export interface ReplaceTextParameter
+  extends Partial<RangeParameter>,
+    Partial<AttributesParameter> {
   /**
    * The text to append.
    *
@@ -251,7 +284,7 @@ interface ReplaceTextParameter extends Partial<RangeParameter>, Partial<Attribut
 export function isChrome(minVersion = 0): boolean {
   const parsedAgent = navigator.userAgent.match(/Chrom(e|ium)\/(\d+)\./);
 
-  return parsedAgent ? Number.parseInt(parsedAgent[2], 10) >= minVersion : false;
+  return parsedAgent ? Number.parseInt(assertGet(parsedAgent, 2), 10) >= minVersion : false;
 }
 
 /**
@@ -343,7 +376,7 @@ export function replaceText(parameter: ReplaceTextParameter): CommandFunction {
   };
 }
 
-interface RemoveMarkParameter extends MarkTypeParameter, Partial<RangeParameter<'to'>> {
+export interface RemoveMarkParameter extends MarkTypeParameter, Partial<RangeParameter<'to'>> {
   /**
    * Whether to expand empty selections to the current mark range
    *

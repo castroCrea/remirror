@@ -1,14 +1,4 @@
 /**
- * The editor class name
- */
-export const EDITOR_CLASS_NAME = 'remirror-editor' as const;
-
-/**
- * The editor class selector
- */
-export const EDITOR_CLASS_SELECTOR = `.${EDITOR_CLASS_NAME}`;
-
-/**
  * The css class added to a node that is selected.
  */
 export const SELECTED_NODE_CLASS_NAME = 'ProseMirror-selectednode';
@@ -34,6 +24,15 @@ export const LEAF_NODE_REPLACING_CHARACTER = '\uFFFC';
  * See {@link https://stackoverflow.com/a/6380172}
  */
 export const NULL_CHARACTER = '\0';
+
+/**
+ * Indicates that a state update was caused by an override and not via
+ * transactions or user commands.
+ *
+ * This is the case when `setContent` is called and for all `controlled` updates
+ * within a `react` editor instance.
+ */
+export const STATE_OVERRIDE = '__state_override__';
 
 /**
  * A character useful for separating inline nodes.
@@ -75,13 +74,13 @@ export const EMPTY_NODE = {
 /**
  * The type for the extension tags..
  */
-export type ExtensionTags = Remirror.ExtensionTags & typeof BaseExtensionTag;
+export type ExtensionTag = Remirror.ExtensionTags & typeof BaseExtensionTag;
 
 /**
  * A method for updating the extension tags.
  *
  * ```tsx
- * import { ExtensionTag, mutateTag } from 'remirror/core';
+ * import { ExtensionTag, mutateTag } from 'remirror';
  *
  * mutateTag((tag) => {
  *   tag.SuperCustom = 'superCustom';
@@ -100,7 +99,7 @@ export type ExtensionTags = Remirror.ExtensionTags & typeof BaseExtensionTag;
  * log(ExtensionTag.NotDefined); // This will throw ❌
  * ```
  */
-export function mutateTag(mutator: (Tag: ExtensionTags) => void): void {
+export function mutateTag(mutator: (Tag: ExtensionTag) => void): void {
   mutator(BaseExtensionTag);
 }
 
@@ -201,7 +200,17 @@ const BaseExtensionTag = {
   /**
    * Sets this as a block level node.
    */
+  Block: 'block',
+
+  /**
+   * @deprecate use `ExtensionTags.Block` instead.
+   */
   BlockNode: 'block',
+
+  /**
+   * Set this as a text block
+   */
+  TextBlock: 'textBlock',
 
   /**
    * A tag that excludes this from input rules.
@@ -209,10 +218,15 @@ const BaseExtensionTag = {
   ExcludeInputRules: 'excludeFromInputRules',
 
   /**
-   * A mark that can be exited when at the end and beginning of the document
+   * A mark or node that can be exited when at the end and beginning of the document
    * with an arrow key.
    */
-  MarkSupportsExit: 'markSupportsExits',
+  SupportsExit: 'supportsExit',
+
+  /**
+   * Represents a media compatible node.
+   */
+  Media: 'media',
 } as const;
 
 /**
@@ -225,77 +239,12 @@ const BaseExtensionTag = {
  * categorizations can be used by other extensions when running commands and
  * updating the document.
  */
-export const ExtensionTag = BaseExtensionTag as ExtensionTags;
+export const ExtensionTag = BaseExtensionTag as ExtensionTag;
 
 /**
  * The string values which can be used as extension tags.
  */
-export type ExtensionTagType = ExtensionTags[keyof ExtensionTags];
-
-/**
- * Marks are categorized into different groups. One motivation for this was to
- * allow the `code` mark to exclude other marks, without needing to explicitly
- * name them. Explicit naming requires the named mark to exist in the schema.
- * This is undesirable because we want to construct different schemas that have
- * different sets of nodes/marks.
- *
- * @deprecated use `ExtensionTag` instead
- */
-export enum MarkGroup {
-  /**
-   * Mark group for font styling (e.g. bold, italic, underline, superscript).
-   */
-  FontStyle = 'fontStyle',
-
-  /**
-   * Mark groups for links.
-   */
-  Link = 'link',
-
-  /**
-   * Mark groups for colors (text-color, background-color, etc).
-   */
-  Color = 'color',
-
-  /**
-   * Mark group for alignment.
-   */
-  Alignment = 'alignment',
-
-  /**
-   * Mark group for indentation.
-   */
-  Indentation = 'indentation',
-
-  /**
-   * Marks which affect behavior.
-   */
-  Behavior = 'behavior',
-
-  /**
-   * Marks which store code.
-   */
-  Code = 'code',
-}
-
-/**
- * @deprecated use `ExtensionTag` instead
- */
-export enum NodeGroup {
-  /**
-   * Whether this node is an inline node.
-   *
-   * @example
-   *
-   * `text` is an inline node, but `paragraph` is a block node.
-   */
-  Inline = 'inline',
-
-  /**
-   * Sets this as a block level node.
-   */
-  Block = 'block',
-}
+export type ExtensionTagType = ExtensionTag[keyof ExtensionTag];
 
 /**
  * The identifier key which is used to check objects for whether they are a
@@ -456,10 +405,34 @@ export enum ManagerPhase {
 
   /**
    * The manager is being destroyed.
-   *
-   * TODO not currently implemented
    */
   Destroy,
+}
+
+/**
+ * The named shortcuts that can be used to update multiple commands.
+ */
+export enum NamedShortcut {
+  Undo = '_|undo|_',
+  Redo = '_|redo|_',
+  Bold = '_|bold|_',
+  Italic = '_|italic|_',
+  Underline = '_|underline|_',
+  Strike = '_|strike|_',
+  Code = '_|code|_',
+  Paragraph = '_|paragraph|_',
+  H1 = '_|h1|_',
+  H2 = '_|h2|_',
+  H3 = '_|h3|_',
+  H4 = '_|h4|_',
+  H5 = '_|h5|_',
+  H6 = '_|h6|_',
+  BulletList = '_|bullet|_',
+  NumberList = '_|number|_',
+  Quote = '_|quote|_',
+  Divider = '_|divider|_',
+  Codeblock = '_|codeblock|_',
+  ClearFormatting = '_|clear|_',
 }
 
 declare global {

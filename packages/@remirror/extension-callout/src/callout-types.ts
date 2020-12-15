@@ -1,6 +1,6 @@
 import type { LiteralUnion } from 'type-fest';
 
-import type { ProsemirrorAttributes } from '@remirror/core';
+import type { ProsemirrorAttributes, Static } from '@remirror/core';
 
 /**
  * Options available to the [[`CalloutExtension`]].
@@ -13,7 +13,7 @@ export interface CalloutOptions {
    *
    * @default 'info'
    */
-  defaultType?: string;
+  defaultType?: Static<string>;
 }
 
 export interface CalloutAttributes extends ProsemirrorAttributes {

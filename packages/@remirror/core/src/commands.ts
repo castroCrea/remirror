@@ -1,14 +1,14 @@
-import { entries, isFunction, isPromise } from '@remirror/core-helpers';
+import { assertGet, entries, isFunction, isPromise } from '@remirror/core-helpers';
 import type {
   AttributesParameter,
   CommandFunction,
   EditorSchema,
   FromToParameter,
-  MarkAttributes,
   MarkTypeParameter,
-  RangeParameter,
+  PrimitiveSelection,
+  ProsemirrorAttributes,
 } from '@remirror/core-types';
-import { convertCommand, isMarkActive } from '@remirror/core-utils';
+import { convertCommand, isMarkActive, getTextSelection } from '@remirror/core-utils';
 import { toggleMark as originalToggleMark } from '@remirror/pm/commands';
 
 /**
@@ -97,8 +97,17 @@ export function delayedCommand<Value>({
 
 export interface ToggleMarkParameter<Schema extends EditorSchema = EditorSchema>
   extends MarkTypeParameter<Schema>,
-    Partial<AttributesParameter>,
-    Partial<RangeParameter> {}
+    Partial<AttributesParameter> {
+  /**
+   * @deprecated use `selection` property instead.
+   */
+  range?: FromToParameter;
+
+  /**
+   * The selection point for toggling the chosen mark.
+   */
+  selection?: PrimitiveSelection;
+}
 
 /**
  * A custom `toggleMark` function that works for the `remirror` codebase.
@@ -117,15 +126,16 @@ export interface ToggleMarkParameter<Schema extends EditorSchema = EditorSchema>
  * - Supports passing a custom range.
  */
 export function toggleMark(parameter: ToggleMarkParameter): CommandFunction {
-  const { type, attrs, range } = parameter;
+  const { type, attrs, range, selection } = parameter;
 
   return (parameter) => {
     const { dispatch, tr } = parameter;
 
-    if (range) {
+    if (range || selection) {
+      const { from, to } = getTextSelection(selection ?? range ?? tr.selection, tr.doc);
       isMarkActive({ trState: tr, type, ...range })
-        ? dispatch?.(tr.removeMark(range.from, range.to, type))
-        : dispatch?.(tr.addMark(range.from, range.to, type.create(attrs)));
+        ? dispatch?.(tr.removeMark(from, to, type))
+        : dispatch?.(tr.addMark(from, to, type.create(attrs)));
 
       return true;
     }
@@ -138,7 +148,7 @@ export interface InsertTextOptions extends Partial<FromToParameter> {
   /**
    * Marks can be added to the inserted text.
    */
-  marks?: Record<string, MarkAttributes>;
+  marks?: Record<string, ProsemirrorAttributes>;
 }
 
 /**
@@ -161,13 +171,15 @@ export function insertText(text: string, options: InsertTextOptions = {}): Comma
 
     // Map the end position after inserting the text to understand what needs to
     // be wrapped with a mark.
-    const end = tr.steps[tr.steps.length - 1].getMap().map(to);
+    const end = assertGet(tr.steps, tr.steps.length - 1)
+      .getMap()
+      .map(to);
 
     // Loop through the provided marks to add the mark to the selection. This
     // uses the order of the map you created. If any marks are exclusive, they
     // will override the previous.
     for (const [markName, attributes] of entries(marks)) {
-      tr.addMark(from, end, schema.marks[markName].create(attributes));
+      tr.addMark(from, end, assertGet(schema.marks, markName).create(attributes));
     }
 
     dispatch(tr);

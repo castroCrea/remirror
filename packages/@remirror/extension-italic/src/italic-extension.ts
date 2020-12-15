@@ -1,7 +1,7 @@
 import {
   ApplySchemaAttributes,
   CommandFunction,
-  extensionDecorator,
+  extension,
   ExtensionTag,
   FromToParameter,
   InputRule,
@@ -9,21 +9,24 @@ import {
   MarkExtension,
   MarkExtensionSpec,
   markInputRule,
-  markPasteRule,
-  ProsemirrorPlugin,
+  MarkSpecOverride,
   toggleMark,
 } from '@remirror/core';
+import { MarkPasteRule } from '@remirror/pm/paste-rules';
 
-@extensionDecorator({})
+@extension({})
 export class ItalicExtension extends MarkExtension {
   get name() {
     return 'italic' as const;
   }
 
-  readonly tags = [ExtensionTag.FontStyle];
+  createTags() {
+    return [ExtensionTag.FontStyle, ExtensionTag.SupportsExit, ExtensionTag.FormattingMark];
+  }
 
-  createMarkSpec(extra: ApplySchemaAttributes): MarkExtensionSpec {
+  createMarkSpec(extra: ApplySchemaAttributes, override: MarkSpecOverride): MarkExtensionSpec {
     return {
+      ...override,
       attrs: extra.defaults(),
 
       parseDOM: [
@@ -73,10 +76,10 @@ export class ItalicExtension extends MarkExtension {
     ];
   }
 
-  createPasteRules(): ProsemirrorPlugin[] {
+  createPasteRules(): MarkPasteRule[] {
     return [
-      markPasteRule({ regexp: /_([^_]+)_/g, type: this.type }),
-      markPasteRule({ regexp: /\*([^*]+)\*/g, type: this.type }),
+      { type: 'mark', markType: this.type, regexp: /_([^_]+)_/g },
+      { type: 'mark', markType: this.type, regexp: /\*([^*]+)\*/g },
     ];
   }
 }

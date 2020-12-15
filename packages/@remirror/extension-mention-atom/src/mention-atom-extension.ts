@@ -2,19 +2,20 @@ import {
   ApplySchemaAttributes,
   CommandFunction,
   ErrorConstant,
-  extensionDecorator,
+  extension,
   ExtensionTag,
   Handler,
   invariant,
   isElementDomNode,
   isString,
   kebabCase,
-  NodeAttributes,
   NodeExtension,
   NodeExtensionSpec,
+  NodeSpecOverride,
   NodeWithPosition,
   omitExtraAttributes,
   pick,
+  ProsemirrorAttributes,
   replaceText,
   Static,
 } from '@remirror/core';
@@ -107,7 +108,7 @@ export interface MentionAtomOptions
  * It provides mentions as atom nodes which don't support editing once being
  * inserted into the document.
  */
-@extensionDecorator<MentionAtomOptions>({
+@extension<MentionAtomOptions>({
   defaultOptions: {
     selectable: true,
     draggable: false,
@@ -131,24 +132,26 @@ export class MentionAtomExtension extends NodeExtension<MentionAtomOptions> {
     return 'mentionAtom' as const;
   }
 
-  readonly tags = [ExtensionTag.InlineNode, ExtensionTag.Behavior];
+  createTags() {
+    return [ExtensionTag.InlineNode, ExtensionTag.Behavior];
+  }
 
-  createNodeSpec(extra: ApplySchemaAttributes): NodeExtensionSpec {
+  createNodeSpec(extra: ApplySchemaAttributes, override: NodeSpecOverride): NodeExtensionSpec {
     const dataAttributeId = 'data-mention-atom-id';
     const dataAttributeName = 'data-mention-atom-name';
 
     return {
+      inline: true,
+      selectable: this.options.selectable,
+      draggable: this.options.draggable,
+      atom: true,
+      ...override,
       attrs: {
         ...extra.defaults(),
         id: {},
         label: {},
         name: {},
       },
-      inline: true,
-      selectable: this.options.selectable,
-      draggable: this.options.draggable,
-      atom: true,
-
       parseDOM: [
         {
           tag: `${this.options.mentionTag}[${dataAttributeId}]`,
@@ -338,7 +341,7 @@ export interface CreateMentionAtom {
  * The attrs that will be added to the node.
  * ID and label are plucked and used while attributes like href and role can be assigned as desired.
  */
-export type MentionAtomNodeAttributes = NodeAttributes<
+export type MentionAtomNodeAttributes = ProsemirrorAttributes<
   OptionalMentionAtomExtensionParameter & {
     /**
      * A unique identifier for the suggesters node

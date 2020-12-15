@@ -1,11 +1,12 @@
+import { ErrorConstant } from '@remirror/core-constants';
 import {
-  bool,
   entries,
   invariant,
   isArray,
-  isEmptyArray,
   isEmptyObject,
+  isNonEmptyArray,
   isNullOrUndefined,
+  isString,
   object,
 } from '@remirror/core-helpers';
 import type {
@@ -18,7 +19,7 @@ import type {
   KeyBindingCommandFunction,
   KeyBindings,
   MarkTypesParameter,
-  NodeTypeParameter,
+  NodeTypeNameParameter,
   NodeTypesParameter,
   OptionalMarkParameter,
   OptionalProsemirrorNodeParameter,
@@ -362,14 +363,6 @@ interface FindSelectedNodeOfTypeParameter<Schema extends EditorSchema = EditorSc
   extends NodeTypesParameter<Schema>,
     SelectionParameter<Schema> {}
 
-export interface FindSelectedNodeOfType<Schema extends EditorSchema = EditorSchema>
-  extends FindProsemirrorNodeResult<Schema> {
-  /**
-   * The depth of the returned node.
-   */
-  depth: number;
-}
-
 /**
  * Returns a node of a given `nodeType` if it is selected. `start` points to the
  * start position of the node, `pos` points directly before the node.
@@ -385,7 +378,7 @@ export interface FindSelectedNodeOfType<Schema extends EditorSchema = EditorSche
  */
 export function findSelectedNodeOfType<Schema extends EditorSchema = EditorSchema>(
   parameter: FindSelectedNodeOfTypeParameter<Schema>,
-): FindSelectedNodeOfType<Schema> | undefined {
+): FindProsemirrorNodeResult<Schema> | undefined {
   const { types, selection } = parameter;
 
   if (!isNodeSelection(selection) || !isNodeOfType({ types, node: selection.node })) {
@@ -524,13 +517,6 @@ export function hasTransactionChanged(tr: Transaction): boolean {
   return tr.docChanged || tr.selectionSet;
 }
 
-interface IsNodeActiveParameter extends NodeTypeParameter, Partial<AttributesParameter> {
-  /**
-   * State or transaction parameter.
-   */
-  state: EditorState | Transaction;
-}
-
 /**
  * Checks whether the node type passed in is active within the region. Used by
  * extensions to implement the `active` method.
@@ -539,20 +525,39 @@ interface IsNodeActiveParameter extends NodeTypeParameter, Partial<AttributesPar
  *
  * @param params - the destructured node active parameters
  */
-export function isNodeActive(parameter: IsNodeActiveParameter): boolean {
-  const { state, type, attrs = {} } = parameter;
+export function isNodeActive(parameter: GetActiveAttrsParameter): boolean {
+  return !!getActiveNode(parameter);
+}
 
+interface GetActiveAttrsParameter extends NodeTypeNameParameter, Partial<AttributesParameter> {
+  /**
+   * State or transaction parameter.
+   */
+  state: EditorState | Transaction;
+}
+
+/**
+ * Get node of a provided type with the provided attributes if it exists as a
+ * parent. Returns positional data for the node that was found.
+ */
+export function getActiveNode(
+  parameter: GetActiveAttrsParameter,
+): FindProsemirrorNodeResult | undefined {
+  const { state, type, attrs } = parameter;
   const { selection } = state;
-  const predicate = (node: ProsemirrorNode) => node.type === type;
+  const nodeType = isString(type) ? state.doc.type.schema.nodes[type] : type;
 
-  const parent =
-    findSelectedNodeOfType({ selection, types: type }) ?? findParentNode({ predicate, selection });
+  invariant(nodeType, { code: ErrorConstant.SCHEMA, message: `No node exists for ${type}` });
 
-  if (!attrs || isEmptyObject(attrs) || !parent) {
-    return bool(parent);
+  const active =
+    findSelectedNodeOfType({ selection, types: type }) ??
+    findParentNode({ predicate: (node: ProsemirrorNode) => node.type === nodeType, selection });
+
+  if (!attrs || isEmptyObject(attrs) || !active) {
+    return active;
   }
 
-  return parent.node.hasMarkup(type, { ...parent.node.attrs, ...attrs });
+  return active.node.hasMarkup(nodeType, { ...active.node.attrs, ...attrs }) ? active : undefined;
 }
 
 /**
@@ -607,7 +612,7 @@ export function chainKeyBindingCommands<Schema extends EditorSchema = EditorSche
 ): KeyBindingCommandFunction<Schema> {
   return (parameters) => {
     // When no commands are passed just ignore and continue.
-    if (isEmptyArray(commands)) {
+    if (!isNonEmptyArray(commands)) {
       return false;
     }
 
@@ -625,7 +630,7 @@ export function chainKeyBindingCommands<Schema extends EditorSchema = EditorSche
       ...nextCommands: Array<KeyBindingCommandFunction<Schema>>
     ): (() => boolean) => () => {
       // If there are no commands then this can be ignored and continued.
-      if (isEmptyArray(nextCommands)) {
+      if (!isNonEmptyArray(nextCommands)) {
         return false;
       }
 
@@ -669,8 +674,8 @@ export function chainKeyBindingCommands<Schema extends EditorSchema = EditorSche
  * - It is used to create the [[`mergeKeyBindings`]] function helper.
  * - It is used to create the [[`mergeProsemirrorKeyBindings`]] function helper.
  *
- * @typeParam [Schema] - the schema that is being used to create this command.
- * @typeParam [Type] - the mapper type signature which is what the `mapper`
+ * @template [Schema] - the schema that is being used to create this command.
+ * @template [Type] - the mapper type signature which is what the `mapper`
  * param transforms the [[`KeyBindingCommandFunction`]]  into.
  *
  * @param extensionKeymaps - the list of extension keymaps similar to the

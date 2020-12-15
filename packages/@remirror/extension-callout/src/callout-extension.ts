@@ -1,45 +1,50 @@
 import {
   ApplySchemaAttributes,
+  command,
   CommandFunction,
-  extensionDecorator,
+  extension,
   ExtensionTag,
   findNodeAtSelection,
   isElementDomNode,
-  KeyBindings,
+  keyBinding,
+  KeyBindingParameter,
   NodeExtension,
   NodeExtensionSpec,
+  NodeSpecOverride,
   omitExtraAttributes,
   toggleWrap,
 } from '@remirror/core';
 import { TextSelection } from '@remirror/pm/state';
 
 import type { CalloutAttributes, CalloutOptions } from './callout-types';
-import { dataAttributeType, updateNodeAttributes } from './callout-utils';
+import { dataAttributeType, toggleCalloutOptions, updateNodeAttributes } from './callout-utils';
 
 /**
  * Adds a callout to the editor.
  */
-@extensionDecorator<CalloutOptions>({
+@extension<CalloutOptions>({
   defaultOptions: {
     defaultType: 'info',
   },
+  staticKeys: ['defaultType'],
 })
 export class CalloutExtension extends NodeExtension<CalloutOptions> {
   get name() {
     return 'callout' as const;
   }
 
-  readonly tags = [ExtensionTag.BlockNode];
+  readonly tags = [ExtensionTag.Block];
 
-  createNodeSpec(extra: ApplySchemaAttributes): NodeExtensionSpec {
+  createNodeSpec(extra: ApplySchemaAttributes, override: NodeSpecOverride): NodeExtensionSpec {
     return {
+      content: 'block*',
+      defining: true,
+      draggable: false,
+      ...override,
       attrs: {
         ...extra.defaults(),
         type: { default: this.options.defaultType },
       },
-      content: 'block*',
-      defining: true,
-      draggable: false,
       parseDOM: [
         {
           tag: `div[${dataAttributeType}]`,
@@ -63,95 +68,92 @@ export class CalloutExtension extends NodeExtension<CalloutOptions> {
     };
   }
 
-  createCommands() {
-    return {
-      /**
-       * Toggle the callout at the current selection. If you don't provide the
-       * type it will use the options.defaultType.
-       *
-       * If none exists one will be created or the existing callout content will be
-       * lifted out of the callout node.
-       *
-       * ```ts
-       * if (commands.toggleCallout.isEnabled()) {
-       *   commands.toggleCallout({ type: 'success' });
-       * }
-       * ```
-       */
-      toggleCallout: (attributes: CalloutAttributes = {}): CommandFunction =>
-        toggleWrap(this.type, attributes),
-
-      /**
-       * Update the callout at the current position. Primarily this is used
-       * to change the type.
-       *
-       * ```ts
-       * if (commands.updateCallout.isEnabled()) {
-       *   commands.updateCallout({ type: 'error' });
-       * }
-       * ```
-       */
-      updateCallout: (attributes: CalloutAttributes): CommandFunction =>
-        updateNodeAttributes(this.type)(attributes),
-    };
+  /**
+   * Toggle the callout at the current selection. If you don't provide the
+   * type it will use the options.defaultType.
+   *
+   * If none exists one will be created or the existing callout content will be
+   * lifted out of the callout node.
+   *
+   * ```ts
+   * if (commands.toggleCallout.isEnabled()) {
+   *   commands.toggleCallout({ type: 'success' });
+   * }
+   * ```
+   */
+  @command({})
+  toggleCallout(attributes: CalloutAttributes = {}): CommandFunction {
+    return toggleWrap(this.type, attributes);
   }
 
   /**
-   * Create specific keyboard bindings for the code block.
+   * Update the callout at the current position. Primarily this is used
+   * to change the type.
+   *
+   * ```ts
+   * if (commands.updateCallout.isEnabled()) {
+   *   commands.updateCallout({ type: 'error' });
+   * }
+   * ```
    */
-  createKeymap(): KeyBindings {
-    return {
-      Backspace: ({ dispatch, tr }) => {
-        // Aims to stop merging callouts when deleting content in between
-        const { selection } = tr;
+  @command(toggleCalloutOptions)
+  updateCallout(attributes: CalloutAttributes): CommandFunction {
+    return updateNodeAttributes(this.type)(attributes);
+  }
 
-        // If the selection is not empty return false and let other extension
-        // (ie: BaseKeymapExtension) to do the deleting operation.
-        if (!selection.empty) {
-          return false;
-        }
+  /**
+   * Handle the backspace key when deleting content.
+   */
+  @keyBinding({ shortcut: 'Backspace' })
+  handleBackspace({ dispatch, tr }: KeyBindingParameter): boolean {
+    // Aims to stop merging callouts when deleting content in between
+    const { selection } = tr;
 
-        const { $from } = selection;
+    // If the selection is not empty return false and let other extension
+    // (ie: BaseKeymapExtension) to do the deleting operation.
+    if (!selection.empty) {
+      return false;
+    }
 
-        // If not at the start of current node, no joining will happen
-        if ($from.parentOffset !== 0) {
-          return false;
-        }
+    const { $from } = selection;
 
-        const previousPosition = $from.before($from.depth) - 1;
+    // If not at the start of current node, no joining will happen
+    if ($from.parentOffset !== 0) {
+      return false;
+    }
 
-        // If nothing above to join with
-        if (previousPosition < 1) {
-          return false;
-        }
+    const previousPosition = $from.before($from.depth) - 1;
 
-        const previousPos = tr.doc.resolve(previousPosition);
+    // If nothing above to join with
+    if (previousPosition < 1) {
+      return false;
+    }
 
-        // If resolving previous position fails, bail out
-        if (!previousPos?.parent) {
-          return false;
-        }
+    const previousPos = tr.doc.resolve(previousPosition);
 
-        const previousNode = previousPos.parent;
-        const { node, pos } = findNodeAtSelection(selection);
+    // If resolving previous position fails, bail out
+    if (!previousPos?.parent) {
+      return false;
+    }
 
-        // If previous node is a callout, cut current node's content into it
-        if (node.type !== this.type && previousNode.type === this.type) {
-          const { content, nodeSize } = node;
-          tr.delete(pos, pos + nodeSize);
-          tr.setSelection(TextSelection.create(tr.doc, previousPosition - 1));
-          tr.insert(previousPosition - 1, content);
+    const previousNode = previousPos.parent;
+    const { node, pos } = findNodeAtSelection(selection);
 
-          if (dispatch) {
-            dispatch(tr);
-          }
+    // If previous node is a callout, cut current node's content into it
+    if (node.type !== this.type && previousNode.type === this.type) {
+      const { content, nodeSize } = node;
+      tr.delete(pos, pos + nodeSize);
+      tr.setSelection(TextSelection.create(tr.doc, previousPosition - 1));
+      tr.insert(previousPosition - 1, content);
 
-          return true;
-        }
+      if (dispatch) {
+        dispatch(tr);
+      }
 
-        return false;
-      },
-    };
+      return true;
+    }
+
+    return false;
   }
 }
 
